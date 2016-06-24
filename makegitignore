@@ -1,0 +1,62 @@
+#!/usr/bin/env python
+
+import os
+import re
+import subprocess
+import sys
+
+GITIGNORE_DIR = os.environ.get('GITIGNORE_DIR')
+if not GITIGNORE_DIR:
+    _here = os.path.abspath(os.path.dirname(__file__))
+    GITIGNORE_DIR = os.path.join(os.path.dirname(_here), 'gitignore')
+
+
+def find_gitignore_files(path):
+    output = subprocess.check_output(['find', path, '-name', '*.gitignore'])
+    lines = output.splitlines()
+    for line in lines:
+        name = os.path.relpath(line.decode(), path)
+        name = re.sub(r'\.gitignore$', '', name)
+        yield name, line
+
+
+def prompt_selection(choices, defaults):
+    args = [
+        'dialog', '--stdout', '--separate-output', '--no-tags',
+        '--checklist',
+        'Select gitignore files to include',
+        '0', '0', '0'
+    ]
+    for name, path in choices:
+        args += [path, name, 'on' if name in defaults else 'off']
+    output = subprocess.check_output(args)
+    return output.splitlines()
+
+
+def concatenate_files(filenames, outstream):
+    for name in filenames:
+        with open(name) as fp:
+            outstream.write(fp.read())
+
+
+def detect_defaults():
+    if sys.platform.startswith('linux'):
+        yield 'Global/Linux'
+
+    if sys.platform.startswith('darwin'):
+        yield 'Global/OSX'
+
+    if sys.platform.startswith('cygwin'):
+        yield 'Global/Windows'
+
+    if os.path.exists('setup.py'):
+        yield 'Python'
+
+    if os.path.exists('package.json'):
+        yield 'Node'
+
+
+if __name__ == '__main__':
+    choices = sorted(find_gitignore_files(GITIGNORE_DIR))
+    selection = prompt_selection(choices, defaults=set(detect_defaults()))
+    concatenate_files(selection, sys.stdout)
