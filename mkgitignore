@@ -5,11 +5,36 @@ import re
 import subprocess
 import sys
 
+
 GITIGNORE_DIR = os.environ.get('GITIGNORE_DIR')
 if not GITIGNORE_DIR:
     _realpath = os.path.realpath(__file__)
     _here = os.path.abspath(os.path.dirname(_realpath))
     GITIGNORE_DIR = os.path.join(os.path.dirname(_here), 'gitignore')
+
+
+def _check_command(name):
+    return subprocess.call(
+        ['which', name],
+        stderr=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL) == 0
+
+
+def _get_prompt_option():
+    PROMPT_OPTIONS = [
+        ('zenity', True, _prompt_selection_zenity),
+        ('dialog', False, _prompt_selection_dialog),
+    ]
+
+    UI_AVAILABLE = bool(os.environ.get('DISPLAY'))
+    for command, require_ui, function in PROMPT_OPTIONS:
+        if require_ui and not UI_AVAILABLE:
+            continue
+        if _check_command(command):
+            return function
+    raise ValueError('Could not find any alternative to show dialogs. '
+                     'Please install either dialog (for terminal UI) or '
+                     'zenity (for graphical UI)')
 
 
 def find_gitignore_files(path):
@@ -22,6 +47,11 @@ def find_gitignore_files(path):
 
 
 def prompt_selection(choices, defaults):
+    func = _get_prompt_option()
+    return func(choices, defaults)
+
+
+def _prompt_selection_dialog(choices, defaults):
     args = [
         'dialog', '--stdout', '--separate-output', '--no-tags',
         '--checklist',
@@ -30,6 +60,22 @@ def prompt_selection(choices, defaults):
     ]
     for name, path in choices:
         args += [path, name, 'on' if name in defaults else 'off']
+    output = subprocess.check_output(args)
+    return output.splitlines()
+
+
+def _prompt_selection_zenity(choices, defaults):
+    args = [
+        'zenity', '--list', '--checklist',
+        '--text', 'Select gitignore files to include',
+        '--print-column', '3',  # Path
+        '--separator', r'\n',
+        '--column', '',
+        '--column', 'Name',
+        '--column', 'Path',
+    ]
+    for name, path in choices:
+        args += ['TRUE' if name in defaults else 'FALSE', name, path]
     output = subprocess.check_output(args)
     return output.splitlines()
 
